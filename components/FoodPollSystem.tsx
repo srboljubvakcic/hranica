@@ -8,44 +8,59 @@ import DeliveryManager from "@/components/admin/DeliveryManager";
 import FoodManager from "@/components/admin/FoodManager";
 import DailyMenu from "@/components/admin/DailyMenu";
 import FoodVoteCard from "@/components/FoodVoteCard";
+import client from "edgedb"; // Import EdgeDB klijent
 
 export default function FoodPollSystem() {
   const [isAdmin] = useState(true); // In production, this would come from auth
   const [userId] = useState("user1"); // In production, this would come from auth
   const [isLoading, setIsLoading] = useState(true);
-  
+
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [foods, setFoods] = useState<Food[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
 
   useEffect(() => {
-    const savedDeliveries = localStorage.getItem("deliveries");
-    const savedFoods = localStorage.getItem("foods");
-    const savedVotes = localStorage.getItem("votes");
+    const fetchDataFromDB = async () => {
+      try {
+        const response = await fetch('/api/fetchData');
+        const data = await response.json();
 
-    setDeliveries(savedDeliveries ? JSON.parse(savedDeliveries) : []);
-    setFoods(savedFoods ? JSON.parse(savedFoods) : []);
-    setVotes(savedVotes ? JSON.parse(savedVotes) : []);
-    setIsLoading(false);
+        setDeliveries(data.deliveries);
+        setFoods(data.foods);
+        setVotes(data.votes);
+      } catch (error) {
+        console.error('Error fetching data from DB:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDataFromDB();
   }, []);
 
-  useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem("deliveries", JSON.stringify(deliveries));
+  const saveDataToDB = async () => {
+    try {
+      await fetch('/api/saveData', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          deliveries,
+          foods,
+          votes,
+        }),
+      });
+    } catch (error) {
+      console.error('Error saving data to DB:', error);
     }
-  }, [deliveries, isLoading]);
+  };
 
   useEffect(() => {
     if (!isLoading) {
-      localStorage.setItem("foods", JSON.stringify(foods));
+      saveDataToDB();
     }
-  }, [foods, isLoading]);
-
-  useEffect(() => {
-    if (!isLoading) {
-      localStorage.setItem("votes", JSON.stringify(votes));
-    }
-  }, [votes, isLoading]);
+  }, [deliveries, foods, votes, isLoading]);
 
   const addDelivery = (name: string) => {
     setDeliveries([...deliveries, { id: Date.now().toString(), name }]);
@@ -71,17 +86,17 @@ export default function FoodPollSystem() {
   };
 
   const toggleFoodAvailability = (foodId: string) => {
-    setFoods(foods.map(food => 
+    setFoods(foods.map(food =>
       food.id === foodId ? { ...food, isAvailableToday: !food.isAvailableToday } : food
     ));
   };
 
   const handleVote = (foodId: string, additionalRequests: string) => {
     const today = new Date().toISOString().split('T')[0];
-    const existingVote = votes.find(v => 
+    const existingVote = votes.find(v =>
       v.foodId === foodId && v.userId === userId && v.date === today
     );
-    
+
     if (existingVote) {
       setVotes(votes.filter(v => v.id !== existingVote.id));
     } else {
@@ -103,16 +118,16 @@ export default function FoodPollSystem() {
   const exportResults = () => {
     const today = new Date().toISOString().split('T')[0];
     const todayVotes = votes.filter(v => v.date === today);
-    
+
     const results = foods
       .filter(food => food.isAvailableToday)
       .map(food => {
         const delivery = deliveries.find(d => d.id === food.deliveryId);
         const foodVotes = todayVotes.filter(v => v.foodId === food.id);
-        const details = foodVotes.map(vote => 
+        const details = foodVotes.map(vote =>
           `  - Additional requests: ${vote.additionalRequests || "None"}`
         ).join("\n");
-        
+
         return `[${delivery?.name}] ${food.name} (${foodVotes.length} orders):\n${details}`;
       })
       .join("\n\n");
@@ -196,8 +211,8 @@ export default function FoodPollSystem() {
                       key={food.id}
                       food={food}
                       deliveryName={delivery.name}
-                      votes={votes.filter(v => 
-                        v.foodId === food.id && 
+                      votes={votes.filter(v =>
+                        v.foodId === food.id &&
                         v.date === new Date().toISOString().split('T')[0]
                       )}
                       userId={userId}
